@@ -1,164 +1,411 @@
-
 <!DOCTYPE html>
 <html lang="zh">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>手机记账本</title>
     <style>
-        * { box-sizing: border-box; font-family: -apple-system, sans-serif; }
-        body { margin: 0; padding: 10px; background: #f5f5f7; }
-        .page { display: none; }
-        .active { display: block; }
-        .nav { display: flex; margin-bottom: 15px; }
-        .nav button { flex:1; padding:10px; border:none; background:#007AFF; color:white; }
-        input, select { width:100%; padding:8px; margin:5px 0; border:1px solid #ddd; }
-        .record-item { background:white; padding:10px; margin:5px 0; border-radius:8px; }
-        .delete-btn { color:red; float:right; }
-        #calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
-        .day { background:white; padding:10px; text-align:center; min-height:60px; }
-        .total { font-weight: bold; margin-top:15px; }
-        .small-red { font-size:0.8em; color:red; }
+        * {
+            box-sizing: border-box;
+            font-family: -apple-system, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 10px;
+            background: #f5f5f7;
+        }
+
+        .page {
+            display: none;
+        }
+
+        .active {
+            display: block;
+        }
+
+        .nav {
+            display: flex;
+            margin-bottom: 15px;
+        }
+
+        .nav button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            background: #007AFF;
+            color: white;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+        }
+
+        .record-item {
+            background: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 8px;
+        }
+
+        .delete-btn {
+            color: red;
+            float: right;
+        }
+
+        #calendar {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 3px;
+        }
+
+        .day {
+            background: white;
+            padding: 10px;
+            text-align: center;
+            min-height: 60px;
+        }
+
+        .total {
+            font-weight: bold;
+            margin-top: 15px;
+        }
+
+        .small-red {
+            font-size: 0.8em;
+            color: red;
+        }
+
+        /* 操作反馈提示框样式 */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            z-index: 1000;
+            display: none;
+        }
     </style>
 </head>
+
 <body>
     <!-- 导航 -->
     <div class="nav">
-        <button onclick="showPage('record')">记账</button>
-        <button onclick="showPage('calendar')">日历</button>
+        <button id="recordButton" aria-label="进入记账页面">记账</button>
+        <button id="calendarButton" aria-label="进入日历页面">日历</button>
     </div>
 
     <!-- 记账页面 -->
     <div id="record" class="page active">
-        <input type="date" id="recordDate" value="">
-        <input type="number" id="amount" placeholder="金额">
-        <input type="text" id="item" placeholder="物品名称">
-        <button onclick="addRecord()">添加记录</button>
+        <input type="date" id="recordDate" value="" aria-label="记账日期输入框"
+            placeholder="请输入记账日期，格式如 YYYY-MM-DD">
+        <input type="number" id="amount" placeholder="请输入金额，只能输入数字和小数点" aria-label="记账金额输入框">
+        <input type="text" id="item" placeholder="请输入物品名称" aria-label="记账物品名称输入框">
+        <button id="addRecordButton" aria-label="添加记账记录按钮">添加记录</button>
         <div id="recordsList"></div>
+        <button id="exportButton" aria-label="导出记账数据按钮">导出数据</button>
+        <input type="file" id="importButton" accept=".csv" style="display: none;"
+            aria-label="导入记账数据文件选择框">
     </div>
 
     <!-- 日历页面 -->
     <div id="calendarPage" class="page">
-        <div style="text-align:center; margin:10px 0;">
-            <button onclick="changeMonth(-1)">←</button>
+        <div style="text-align: center; margin: 10px 0;">
+            <button id="prevMonthButton" aria-label="切换到上一个月按钮">←</button>
             <span id="currentMonth"></span>
-            <button onclick="changeMonth(1)">→</button>
+            <button id="nextMonthButton" aria-label="切换到下一个月按钮">→</button>
         </div>
         <div id="calendar"></div>
         <div class="total" id="monthTotal"></div>
     </div>
 
-<script>
-let currentMonth = new Date().getMonth();
-let currentYear = new Date().getFullYear();
-let records = JSON.parse(localStorage.getItem('records') || '[]');
+    <div class="toast" id="toast">操作成功</div>
 
-// 显示不同页面
-function showPage(pageId) {
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById(pageId === 'calendar' ? 'calendarPage' : pageId).classList.add('active');
-}
+    <script>
+        // 记录相关模块
+        const recordModule = (function () {
+            let records = JSON.parse(localStorage.getItem('records') || '[]');
 
-// 添加记录
-function addRecord() {
-    const record = {
-        id: Date.now(),
-        date: document.getElementById('recordDate').value,
-        amount: parseFloat(document.getElementById('amount').value),
-        item: document.getElementById('item').value
-    };
-    
-    records.push(record);
-    saveRecords();
-    updateRecordsList();
-    document.getElementById('amount').value = '';
-    document.getElementById('item').value = '';
-}
+            function saveRecords() {
+                try {
+                    localStorage.setItem('records', JSON.stringify(records));
+                } catch (error) {
+                    showToast("记录保存失败，请检查存储权限或空间");
+                }
+            }
 
-// 删除记录
-function deleteRecord(id) {
-    records = records.filter(r => r.id !== id);
-    saveRecords();
-    updateRecordsList();
-    updateCalendar();
-}
+            function addRecord(date, amount, item) {
+                const record = {
+                    id: Date.now(),
+                    date: date,
+                    amount: amount,
+                    item: item
+                };
+                records.push(record);
+                saveRecords();
+                updateRecordsList();
+                // 清空输入框
+                document.getElementById('amount').value = '';
+                document.getElementById('item').value = '';
+                showToast("记录已成功添加");
+                // 获取当前记录日期的月份和年份
+                const recordDate = new Date(date);
+                const recordMonth = recordDate.getMonth();
+                const recordYear = recordDate.getFullYear();
+                // 更新日历
+                calendarModule.generateCalendar(recordMonth, recordYear);
+            }
 
-// 保存到本地存储
-function saveRecords() {
-    localStorage.setItem('records', JSON.stringify(records));
-}
+            function deleteRecord(id) {
+                records = records.filter(r => r.id!== id);
+                saveRecords();
+                updateRecordsList();
+                // 获取当前日历显示的月份和年份
+                const { currentMonth, currentYear } = calendarModule;
+                // 更新日历
+                calendarModule.generateCalendar(currentMonth, currentYear);
+                showToast("记录已成功删除");
+            }
 
-// 更新记录列表
-function updateRecordsList() {
-    const list = document.getElementById('recordsList');
-    list.innerHTML = records.map(r => `
-        <div class="record-item">
-            ${r.date} - ¥${r.amount} - ${r.item}
-            <span class="delete-btn" onclick="deleteRecord(${r.id})">删除</span>
-        </div>
-    `).join('');
-}
+            function updateRecordsList() {
+                const list = document.getElementById('recordsList');
+                const html = records.map(r => `
+                    <div class="record-item">
+                        ${r.date} - ¥${r.amount} - ${r.item}
+                        <span class="delete-btn" data-id="${r.id}">删除</span>
+                    </div>
+                `).join('');
+                list.innerHTML = html;
 
-// 生成日历
-function generateCalendar(month, year) {
-    const calendar = document.getElementById('calendar');
-    calendar.innerHTML = '';
-    
-    const daysInMonth = new Date(year, month+1, 0).getDate();
-    const firstDay = new Date(year, month, 1).getDay();
-    
-    // 填充空白
-    for(let i = 0; i < firstDay; i++) {
-        calendar.appendChild(createDayElement(''));
-    }
-    
-    // 填充日期
-    for(let d = 1; d <= daysInMonth; d++) {
-        const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-        const dayAmount = records
-            .filter(r => r.date === dateStr)
-            .reduce((sum, r) => sum + r.amount, 0);
-        
-        const dayElement = createDayElement(d);
-        if(dayAmount > 0) {
-            dayElement.innerHTML += `<div class="small-red">¥${dayAmount}</div>`;
+                const deleteButtons = document.querySelectorAll('.delete-btn');
+                deleteButtons.forEach(button => {
+                    button.addEventListener('click', function () {
+                        const id = parseInt(this.dataset.id);
+                        deleteRecord(id);
+                    });
+                });
+            }
+
+            return {
+                records,
+                addRecord,
+                deleteRecord,
+                updateRecordsList
+            };
+        })();
+
+        // 日历相关模块
+        const calendarModule = (function () {
+            let currentMonth = new Date().getMonth();
+            let currentYear = new Date().getFullYear();
+            const calendarCache = {};
+
+            function generateCalendar(month, year) {
+                const cacheKey = `${year}-${month}`;
+                // 清除缓存，确保每次都重新计算
+                calendarCache[cacheKey] = null;
+
+                const calendar = document.getElementById('calendar');
+                const daysInMonth = new Date(year, month + 1, 0).getDate();
+                const firstDay = new Date(year, month, 1).getDay();
+
+                const calendarData = [];
+                // 填充空白
+                for (let i = 0; i < firstDay; i++) {
+                    calendarData.push(createDayElement(''));
+                }
+
+                // 填充日期
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const dayAmount = recordModule.records
+                       .filter(r => r.date === dateStr)
+                       .reduce((sum, r) => {
+                            const scaledAmount = Math.round(r.amount * 100);
+                            return sum + scaledAmount;
+                        }, 0) / 100;
+
+                    const dayElement = createDayElement(d);
+                    if (dayAmount > 0) {
+                        dayElement.innerHTML += `<div class="small-red">¥${dayAmount}</div>`;
+                    }
+                    calendarData.push(dayElement);
+                }
+
+                calendarCache[cacheKey] = calendarData;
+                renderCalendar(calendarData);
+
+                // 更新月份显示和总额
+                document.getElementById('currentMonth').textContent =
+                    `${year}年${month + 1}月`;
+                document.getElementById('monthTotal').textContent =
+                    `本月总支出：¥${recordModule.records
+                       .filter(r => new Date(r.date).getMonth() === month)
+                       .reduce((sum, r) => {
+                            const scaledAmount = Math.round(r.amount * 100);
+                            return sum + scaledAmount;
+                        }, 0) / 100}`;
+
+                // 更新当前显示的月份和年份
+                currentMonth = month;
+                currentYear = year;
+            }
+
+            function renderCalendar(calendarData) {
+                const calendar = document.getElementById('calendar');
+                calendar.innerHTML = '';
+                calendarData.forEach(dayElement => {
+                    calendar.appendChild(dayElement);
+                });
+            }
+
+            function createDayElement(day) {
+                const div = document.createElement('div');
+                div.className = 'day';
+                div.textContent = day;
+                return div;
+            }
+
+            function changeMonth(offset) {
+                currentMonth += offset;
+                if (currentMonth > 11) {
+                    currentMonth = 0;
+                    currentYear++;
+                } else if (currentMonth < 0) {
+                    currentMonth = 11;
+                    currentYear--;
+                }
+                generateCalendar(currentMonth, currentYear);
+            }
+
+            return {
+                generateCalendar,
+                changeMonth,
+                currentMonth,
+                currentYear
+            };
+        })();
+
+        function showPage(pageId) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            const targetPage = document.getElementById(pageId === 'calendar'? 'calendarPage' : pageId);
+            targetPage.classList.add('active');
         }
-        calendar.appendChild(dayElement);
-    }
-    
-    // 更新月份显示和总额
-    document.getElementById('currentMonth').textContent = 
-        `${year}年${month+1}月`;
-    document.getElementById('monthTotal').textContent = 
-        `本月总支出：¥${records
-            .filter(r => new Date(r.date).getMonth() === month)
-            .reduce((sum, r) => sum + r.amount, 0)}`;
-}
 
-function createDayElement(day) {
-    const div = document.createElement('div');
-    div.className = 'day';
-    div.textContent = day;
-    return div;
-}
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.style.display = 'block';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 2000);
+        }
 
-// 切换月份
-function changeMonth(offset) {
-    currentMonth += offset;
-    if(currentMonth > 11) {
-        currentMonth = 0;
-        currentYear++;
-    } else if(currentMonth < 0) {
-        currentMonth = 11;
-        currentYear--;
-    }
-    generateCalendar(currentMonth, currentYear);
-}
+        // 数据导出功能
+        function exportData() {
+            const csvContent = "data:text/csv;charset=utf-8," +
+                "日期,金额,物品名称\n" +
+                recordModule.records.map(r => `${r.date},${r.amount},${r.item}`).join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "记账数据.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
 
-// 初始化
-document.getElementById('recordDate').value = new Date().toISOString().split('T')[0];
-updateRecordsList();
-generateCalendar(new Date().getMonth(), new Date().getFullYear());
-</script>
+        // 数据导入功能（简单示例，未完善错误处理等）
+        function importData(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    const lines = e.target.result.split('\n');
+                    const newRecords = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        const parts = lines[i].split(',');
+                        if (parts.length === 3) {
+                            const record = {
+                                id: Date.now(),
+                                date: parts[0],
+                                amount: parseFloat(parts[1]),
+                                item: parts[2]
+                            };
+                            newRecords.push(record);
+                        }
+                    }
+                    recordModule.records = newRecords;
+                    recordModule.saveRecords();
+                    recordModule.updateRecordsList();
+                    // 获取当前日历显示的月份和年份
+                    const { currentMonth, currentYear } = calendarModule;
+                    // 更新日历
+                    calendarModule.generateCalendar(currentMonth, currentYear);
+                    showToast("数据导入成功");
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        // 初始化
+        document.getElementById('recordDate').value = new Date().toISOString().split('T')[0];
+        recordModule.updateRecordsList();
+        calendarModule.generateCalendar(new Date().getMonth(), new Date().getFullYear());
+
+        // 导航按钮事件绑定
+        const recordButton = document.getElementById('recordButton');
+        const calendarButton = document.getElementById('calendarButton');
+
+        recordButton.addEventListener('click', function (e) {
+            e.preventDefault();
+            showPage('record');
+        });
+
+        calendarButton.addEventListener('click', function (e) {
+            e.preventDefault();
+            showPage('calendar');
+        });
+
+        // 添加记录按钮事件绑定
+        const addRecordButton = document.getElementById('addRecordButton');
+        addRecordButton.addEventListener('click', function () {
+            const recordDate = document.getElementById('recordDate').value;
+            const amount = parseFloat(document.getElementById('amount').value);
+            const item = document.getElementById('item').value;
+            if (recordDate &&!isNaN(amount) && item) {
+                recordModule.addRecord(recordDate, amount, item);
+            } else {
+                showToast("请输入有效的日期、金额和物品名称");
+            }
+        });
+
+        document.getElementById('exportButton').addEventListener('click', exportData);
+        document.getElementById('importButton').addEventListener('change', importData);
+
+        // 日历切换按钮事件绑定
+        const prevMonthButton = document.getElementById('prevMonthButton');
+        const nextMonthButton = document.getElementById('nextMonthButton');
+
+        prevMonthButton.addEventListener('click', function (e) {
+            e.preventDefault();
+            calendarModule.changeMonth(-1);
+        });
+
+        nextMonthButton.addEventListener('click', function (e) {
+            e.preventDefault();
+            calendarModule.changeMonth(1);
+        });
+    </script>
 </body>
-</html>
+
+</html>    
